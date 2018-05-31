@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"sync"
+	"github.com/ipfs/go-ipfs/pin"
 
 	u "gx/ipfs/QmNiJuT8Ja3hMVpBHXv3Q6dwmperaQ6JjLtpMQgMCD7xvx/go-ipfs-util"
 	recpb "gx/ipfs/QmUpttFinNDmNPgFwKN8sZK6BUtBmA68Y4KdSBDXa8t9sJ/go-libp2p-record/pb"
@@ -38,8 +40,8 @@ func (dht *IpfsDHT) handlerForMsgType(t pb.Message_MessageType) dhtHandler {
 		return dht.handleGetProviders
 	case pb.Message_PING:
 		return dht.handlePing
-		// TODO: sandy modified
-	case pb.Message_ADD_FILE:
+
+	case pb.Message_ADD_FILE:// TODO: sandy modified
 		return dht.handleAddFile
 	case pb.Message_REMOVE_FILE:
 		return dht.handlePing
@@ -335,8 +337,8 @@ func (dht *IpfsDHT) handleAddProvider(ctx context.Context, p peer.ID, pmes *pb.M
 	return nil, nil
 }
 
-//TODO: sandy modified
-func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Message) (*pb.Message, error) {
+
+func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Message) (*pb.Message, error) {//TODO: sandy modified
 	lm := make(lgbl.DeferredMap)
 	lm["peer"] = func() interface{} { return p.Pretty() }
 	eip := log.EventBegin(ctx, "handleAddFile", lm)
@@ -350,7 +352,7 @@ func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Messa
 
 	lm["key"] = func() interface{} { return c.String() }
 
-	log.Debugf("%s adding %s as a provider for '%s'\n", dht.self, p, c)
+
 
 	// add provider should use the address given in the message
 	pinfos := pb.PBPeersToPeerInfos(pmes.GetProviderPeers())
@@ -373,6 +375,7 @@ func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Messa
 			dht.peerstore.AddAddrs(pi.ID, pi.Addrs, pstore.ProviderAddrTTL)
 		}
 		dht.providers.AddProvider(ctx, c, p)
+		fmt.Printf("[!!!!]%s adding %s as a provider for '%s'\n", dht.self, p, c)
 	}
 
 	if pmes.GetClusterLevel() == 0 {
@@ -382,52 +385,76 @@ func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Messa
 		}
 		pmes.SetClusterLevel(5);
 		wg := sync.WaitGroup{}
-		for p := range peers {
+		for pp := range peers {
 			wg.Add(1)
-			go func(p peer.ID) {
+			go func(pp peer.ID) {
 				defer wg.Done()
-				log.Debugf("AddFile-level up 0-->5 (%s, %s)", key, p)
-				err := dht.sendMessage(ctx, p, mes)
-				if err != nil {
-					log.Debug(err)
+				fmt.Printf("[!!!!]AddFile-level up 0-->5 , send message to close SuperNode(%s, %s)\n", c, pp)
+				if pp == dht.self {
+					// myself is the closed peer
+					dht.SendToClosestLeaf(ctx, pmes)
+				}else {
+					err := dht.sendMessage(ctx, pp, pmes)
+					if err != nil {
+						log.Debug(err)
+					}
 				}
-			}(p)
+
+			}(pp)
 		}
 		wg.Wait()
+
 	}else if pmes.GetClusterLevel() == 5 {
-		peers, err := dht.GetClosestPeers(ctx, pmes.GetKey())  // leaf nodes
-		if err != nil {
-			return nil, err
-		}
-		pmes.SetClusterLevel(10);
-		wg := sync.WaitGroup{}
-		for p := range peers {
-			wg.Add(1)
-			go func(p peer.ID) {
-				defer wg.Done()
-				log.Debugf("AddFile-level up 5-->10 (%s, %s)", key, p)
-				err := dht.sendMessage(ctx, p, mes)
-				if err != nil {
-					log.Debug(err)
-				}
-			}(p)
-		}
-		wg.Wait()
 
+		dht.SendToClosestLeaf(ctx, pmes)
 	}else {
-		// leaf node , start get key cmd
-
+		// leaf node , start get key cmd , call pin add file
+		fmt.Printf("[!!!!]leaf node %s AddFile-level final (%s, %s), calling pin.SetTask \n", dht.self , c, p)
+		pin.SetTask(pmes.GetKey())
 	}
 
 
 	return nil, nil
 }
-
 // TODO: sandy modified
+func (dht *IpfsDHT) SendToClosestLeaf(ctx context.Context,  pmes *pb.Message) (*pb.Message, error){
+
+	peers, err := dht.GetClosestPeers(ctx, pmes.GetKey())  // leaf nodes
+	if err != nil {
+
+		return nil, err
+	}
+	pmes.SetClusterLevel(10);
+
+	c, err := cid.Cast([]byte(pmes.GetKey()))
+	if err != nil {
+
+		return nil, err
+	}
+
+	wg := sync.WaitGroup{}
+	for p := range peers {
+		wg.Add(1)
+		go func(p peer.ID) {
+			defer wg.Done()
+			fmt.Printf("[!!!!]AddFile-level up 5-->10 , send add task to leaf peers(%s, %s)\n", c, p)
+
+			err := dht.sendMessage(ctx, p, pmes)
+			if err != nil {
+				log.Debug(err)
+			}
+		}(p)
+	}
+	wg.Wait()
+	return pmes, nil
+}
+
+
 func (dht *IpfsDHT) GetClosestSuperPeers(ctx context.Context, key string) (<-chan peer.ID, error) {
 	out := make(chan peer.ID, KValue)
 	defer close(out)
 	out <- dht.self
+	return out, nil
 }
 
 

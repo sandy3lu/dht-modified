@@ -335,10 +335,10 @@ func (dht *IpfsDHT) AddTask(ctx context.Context, key *cid.Cid, brdcst bool) (err
 	// // only share WAN-friendly addresses ??
 	// pi.Addrs = addrutil.WANShareableAddrs(pi.Addrs)
 	if len(pi.Addrs) < 1 {
-		return nil, fmt.Errorf("no known addresses for self. cannot put provider.")
+		return fmt.Errorf("no known addresses for self. cannot put provider.")
 	}
 
-	mes := pb.NewMessage(pb.Message_ADD_FILE, skey.KeyString(), 0)
+	mes := pb.NewMessage(pb.Message_ADD_FILE, key.KeyString(), 0)
 	mes.ProviderPeers = pb.RawPeerInfosToPBPeers([]pstore.PeerInfo{pi})
 
 
@@ -348,7 +348,7 @@ func (dht *IpfsDHT) AddTask(ctx context.Context, key *cid.Cid, brdcst bool) (err
 		wg.Add(1)
 		go func(p peer.ID) {
 			defer wg.Done()
-			log.Debugf("AddTask(%s, %s)", key, p)
+			fmt.Printf("[!!!!] %s sent AddTask message (%s, %s)\n", dht.self, key, p)
 			err := dht.sendMessage(ctx, p, mes)
 			if err != nil {
 				log.Debug(err)
