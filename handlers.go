@@ -378,18 +378,21 @@ func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Messa
 		fmt.Printf("[!!!!]%s adding %s as a provider for '%s'\n", dht.self, p, c)
 	}
 
-	if pmes.GetClusterLevel() == 0 {
+	var curentLevel int =  int(pmes.GetClusterLevelRaw())
+	if curentLevel < 10 {
 		peers, err := dht.GetClosestSuperPeers(ctx, pmes.GetKey()) // super nodes
 		if err != nil {
 			return nil, err
 		}
-		pmes.SetClusterLevel(5);
+
+
+		pmes.SetClusterLevel(curentLevel + 10);
 		wg := sync.WaitGroup{}
 		for pp := range peers {
 			wg.Add(1)
 			go func(pp peer.ID) {
 				defer wg.Done()
-				fmt.Printf("[!!!!]AddFile-level up 0-->5 , send message to close SuperNode(%s, %s)\n", c, pp)
+				fmt.Printf("[!!!!]AddFile-level up %d , send message to close SuperNode(%s, %s)\n", pmes.GetClusterLevelRaw() , c, pp)
 				if pp == dht.self {
 					// myself is the closed peer
 					dht.SendToClosestLeaf(ctx, pmes)
@@ -404,13 +407,24 @@ func (dht *IpfsDHT) handleAddFile(ctx context.Context, p peer.ID, pmes *pb.Messa
 		}
 		wg.Wait()
 
-	}else if pmes.GetClusterLevel() == 5 {
+	}else if (curentLevel <20) && (curentLevel> 10) {
 
 		dht.SendToClosestLeaf(ctx, pmes)
 	}else {
 		// leaf node , start get key cmd , call pin add file
 		fmt.Printf("[!!!!]leaf node %s AddFile-level final (%s, %s), calling pin.SetTask \n", dht.self , c, p)
 		pin.SetTask(pmes.GetKey())
+		resultstr := pin.GetTaskResult()
+		var str string
+		str =<- resultstr
+		fmt.Println(str)
+		if str == "OK" {
+			pmes.SetClusterLevel(88)
+			return pmes, nil
+		}else {
+			pmes.SetClusterLevel(99)
+			return pmes, nil
+		}
 	}
 
 
@@ -424,7 +438,9 @@ func (dht *IpfsDHT) SendToClosestLeaf(ctx context.Context,  pmes *pb.Message) (*
 
 		return nil, err
 	}
-	pmes.SetClusterLevel(10);
+
+	var count = pmes.GetClusterLevelRaw()-10
+	pmes.SetClusterLevel(50);
 
 	c, err := cid.Cast([]byte(pmes.GetKey()))
 	if err != nil {
@@ -432,20 +448,38 @@ func (dht *IpfsDHT) SendToClosestLeaf(ctx context.Context,  pmes *pb.Message) (*
 		return nil, err
 	}
 
-	wg := sync.WaitGroup{}
-	for p := range peers {
-		wg.Add(1)
-		go func(p peer.ID) {
-			defer wg.Done()
-			fmt.Printf("[!!!!]AddFile-level up 5-->10 , send add task to leaf peers(%s, %s)\n", c, p)
 
-			err := dht.sendMessage(ctx, p, pmes)
-			if err != nil {
-				log.Debug(err)
+	pinfos := pb.PBPeersToPeerInfos(pmes.GetProviderPeers())
+	oristr := pinfos[0].ID
+	fmt.Printf("[!!!!]AddFile-level provider = %s \n", oristr)
+	for p := range peers {
+
+
+			if(p == oristr){
+				continue
 			}
-		}(p)
+
+			fmt.Printf("[!!!!]AddFile-level up 50 , send add task to leaf peers(%s, %s)\n", c, p)
+			resp, err := dht.sendRequest(ctx, p, pmes)
+			//err := dht.sendMessage(ctx, p, pmes)
+			if err!= nil {
+				fmt.Printf("[!!!!]task to leaf peers(%s, %s) error %s \n", c, p, err)
+				continue
+			}
+			if resp != nil {
+				if resp.GetClusterLevelRaw() == 88 {
+					count --
+					fmt.Printf("[!!!!]task to leaf peers(%s, %s) success,  %d left \n", c, p, count)
+
+					if count == 0 {
+						return nil, nil
+					}
+				}
+
+			}
+
 	}
-	wg.Wait()
+
 	return pmes, nil
 }
 

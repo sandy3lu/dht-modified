@@ -44,6 +44,8 @@ var Message_MessageType_name = map[int32]string{
 	3: "GET_PROVIDERS",
 	4: "FIND_NODE",
 	5: "PING",
+	6: "ADD_FILE",        //TODO:sandy modified
+	7: "REMOVE_FILE",     //TODO:sandy modified
 }
 var Message_MessageType_value = map[string]int32{
 	"PUT_VALUE":     0,
@@ -52,6 +54,8 @@ var Message_MessageType_value = map[string]int32{
 	"GET_PROVIDERS": 3,
 	"FIND_NODE":     4,
 	"PING":          5,
+	 "ADD_FILE":     6,     //TODO:sandy modified
+	 "REMOVE_FILE":  7,     //TODO:sandy modified
 }
 
 func (x Message_MessageType) Enum() *Message_MessageType {

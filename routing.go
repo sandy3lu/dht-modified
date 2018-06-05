@@ -307,7 +307,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key *cid.Cid, brdcst bool) (err
 
 //TODO: sandy modified
 // AddTask makes this node announce that it has a value for the given key, need some peers to get
-func (dht *IpfsDHT) AddTask(ctx context.Context, key *cid.Cid, brdcst bool) (err error) {
+func (dht *IpfsDHT) AddTask(ctx context.Context, key *cid.Cid, brdcst bool, copyNum int ) (err error) {
 	eip := log.EventBegin(ctx, "AddTask", key, logging.LoggableMap{"broadcast": brdcst})
 	defer func() {
 		if err != nil {
@@ -338,7 +338,7 @@ func (dht *IpfsDHT) AddTask(ctx context.Context, key *cid.Cid, brdcst bool) (err
 		return fmt.Errorf("no known addresses for self. cannot put provider.")
 	}
 
-	mes := pb.NewMessage(pb.Message_ADD_FILE, key.KeyString(), 0)
+	mes := pb.NewMessage(pb.Message_ADD_FILE, key.KeyString(), copyNum)
 	mes.ProviderPeers = pb.RawPeerInfosToPBPeers([]pstore.PeerInfo{pi})
 
 
@@ -348,7 +348,7 @@ func (dht *IpfsDHT) AddTask(ctx context.Context, key *cid.Cid, brdcst bool) (err
 		wg.Add(1)
 		go func(p peer.ID) {
 			defer wg.Done()
-			fmt.Printf("[!!!!] %s sent AddTask message (%s, %s)\n", dht.self, key, p)
+			fmt.Printf("[!!!!] %s sent AddTask message (%s, %s)  with level %d \n", dht.self, key, p, mes.GetClusterLevelRaw())
 			err := dht.sendMessage(ctx, p, mes)
 			if err != nil {
 				log.Debug(err)
